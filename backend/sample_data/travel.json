@@ -1,0 +1,13 @@
+{
+  "export_source": "navan-style trip feed (fabricated)",
+  "segments": [
+    {"type": "flight", "origin": "BOM", "destination": "DEL", "passengers": 1, "date": "2026-03-10"},
+    {"type": "flight", "origin": "DEL", "destination": "JFK", "passengers": 2, "date": "2026-03-12", "distance_km": 11700},
+    {"type": "flight", "origin": "BOM", "destination": "ZZZ", "passengers": 1, "date": "2026-03-15"},
+    {"type": "hotel", "city": "Delhi", "country": "IN", "nights": 3, "check_in": "2026-03-10", "check_out": "2026-03-13"},
+    {"type": "hotel", "city": "New York", "country": "US", "nights": 2, "check_in": "2026-03-12", "check_out": "2026-03-14"},
+    {"type": "car", "mode": "taxi", "distance_km": 42, "date": "2026-03-10"},
+    {"type": "rail", "mode": "rail", "distance_km": 340, "date": "2026-03-14"},
+    {"type": "helicopter", "date": "2026-03-16"}
+  ]
+}

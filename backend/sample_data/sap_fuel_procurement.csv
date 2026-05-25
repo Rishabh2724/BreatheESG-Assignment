@@ -1,0 +1,10 @@
+Buchungsdatum;Werk;Material;Materialkurztext;Materialgruppe;Menge;Einheit;Betrag;Waehrung
+15.01.2026;DE01;1000;Diesel Kraftstoff Fuhrpark;FUEL;1.250,50;L;;EUR
+31.01.2026;DE01;1001;Erdgas Heizung;FUEL;3.400,00;m3;;EUR
+05.02.2026;DE02;1000;Diesel;FUEL;980,00;GAL;;EUR
+12.02.2026;IN01;2000;Bueromaterial Papier;OFFICE;;;125000,00;INR
+18.02.2026;DE01;2001;IT Hardware Laptops;OFFICE;;;42.000,00;EUR
+20.02.2026;XX99;1000;Diesel;FUEL;500,00;L;;EUR
+25.02.2026;DE01;1000;Diesel Korrekturbuchung;FUEL;-50,00;L;;EUR
+28.02.2026;DE01;1000;Diesel;FUEL;200,00;XYZ;;EUR
+02.03.2026;DE01;1000;Diesel;FUEL;150.000,00;L;;EUR
