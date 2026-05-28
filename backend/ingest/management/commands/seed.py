@@ -47,9 +47,30 @@ FACILITIES = [
     ("IN01", "Pune Office", "IN"),
 ]
 
+SAP = ImportBatch.Source.SAP
+UTILITY = ImportBatch.Source.UTILITY
+TRAVEL = ImportBatch.Source.TRAVEL
+
+# Two tenants so org isolation is demonstrable. Each gets its own users, its own facilities,
+# and its own batches. Acme loads all four files; Globex loads a smaller distinct set, so the
+# record counts differ at a glance — log in as each and you see only that org's data.
+#   (slug, name, analyst_username, admin_username, [(source, filename), ...])
+ORGS = [
+    ("acme", "Acme Corp", "analyst", "admin", [
+        (SAP, "sap_fuel_procurement.csv"),
+        (UTILITY, "utility_electricity.csv"),
+        (UTILITY, "utility_correction.csv"),
+        (TRAVEL, "travel.json"),
+    ]),
+    ("globex", "Globex Inc", "globex_analyst", "globex_admin", [
+        (SAP, "sap_fuel_procurement.csv"),
+        (TRAVEL, "travel.json"),
+    ]),
+]
+
 
 class Command(BaseCommand):
-    help = "Seed a demo org with users, factors, facilities, and three ingested batches."
+    help = "Seed two demo orgs with users, factors, facilities, and ingested batches."
 
     def add_arguments(self, parser):
         parser.add_argument("--fresh", action="store_true",
@@ -63,15 +84,7 @@ class Command(BaseCommand):
             ImportBatch.objects.all().delete()
             self.stdout.write("Wiped existing batches/records.")
 
-        org, _ = Organization.objects.get_or_create(slug="acme", defaults={"name": "Acme Corp"})
-
-        analyst = self._user("analyst", "analyst123", User.Role.ANALYST, org)
-        admin = self._user("admin", "admin123", User.Role.ADMIN, org, superuser=True)
-
-        for code, name, country in FACILITIES:
-            Facility.objects.get_or_create(org=org, code=code,
-                                           defaults={"name": name, "country": country})
-
+        # Emission factors are global reference data, not org-scoped. Seed once.
         EmissionFactor.objects.all().delete()
         for cat, region, fuel, val, unit, cur, src in FACTORS:
             EmissionFactor.objects.create(
@@ -81,16 +94,24 @@ class Command(BaseCommand):
             )
 
         self._fresh = opts["fresh"]
-        self._ingest(org, analyst, ImportBatch.Source.SAP, "sap_fuel_procurement.csv")
-        self._ingest(org, analyst, ImportBatch.Source.UTILITY, "utility_electricity.csv")
-        self._ingest(org, analyst, ImportBatch.Source.UTILITY, "utility_correction.csv")
-        self._ingest(org, analyst, ImportBatch.Source.TRAVEL, "travel.json")
+        lines = []
+        for slug, name, analyst_name, admin_name, files in ORGS:
+            org, _ = Organization.objects.get_or_create(slug=slug, defaults={"name": name})
+            analyst = self._user(analyst_name, "analyst123", User.Role.ANALYST, org)
+            admin = self._user(admin_name, "admin123", User.Role.ADMIN, org, superuser=True)
+            for code, fname, country in FACILITIES:
+                Facility.objects.get_or_create(org=org, code=code,
+                                               defaults={"name": fname, "country": country})
+            self.stdout.write(f"\n{name} ({slug}):")
+            for source, filename in files:
+                self._ingest(org, analyst, source, filename)
+            count = ActivityRecord.objects.filter(org=org).count()
+            lines.append(f"  [{name}]  {analyst_name} / analyst123   "
+                         f"token={Token.objects.get(user=analyst).key}")
+            lines.append(f"  [{name}]  {admin_name} / admin123   "
+                         f"token={Token.objects.get(user=admin).key}   ({count} records)")
 
-        self.stdout.write(self.style.SUCCESS(
-            f"\nSeed complete. Org={org.name}\n"
-            f"  analyst / analyst123  token={Token.objects.get(user=analyst).key}\n"
-            f"  admin   / admin123    token={Token.objects.get(user=admin).key}"
-        ))
+        self.stdout.write(self.style.SUCCESS("\nSeed complete.\n" + "\n".join(lines)))
 
     def _user(self, username, password, role, org, superuser=False):
         u, created = User.objects.get_or_create(

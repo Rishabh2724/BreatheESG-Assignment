@@ -1,117 +1,83 @@
 # Data Model
 
-The thing I kept reminding myself building this: the hard part isn't the carbon arithmetic,
-it's trust. When an auditor points at a number, I have to be able to show where it came
-from, what the source actually said, who touched it, and when. So the model is shaped around
-that, not around "store some emissions."
+The hard part here isn't the carbon math, it's trust: when an auditor points at a number I
+have to show where it came from, what the source said, who changed it, and when. The model is
+built around that.
 
-## The core idea: keep raw and normalized separate
+## Core idea: raw and normalized are separate tables
 
-There are two tables doing the real work:
+* `RawRecord` — the source line exactly as it arrived (original headers, units, junk) stored
+  as JSON. Never edited.
+* `ActivityRecord` — the cleaned, carbon-bearing row derived from it. The only thing an
+  analyst edits, approves, locks.
 
-* `RawRecord` is the source line exactly as it arrived. Original headers, original units,
-  whatever junk was in it, stored as JSON. I never edit this.
-* `ActivityRecord` is the cleaned-up, carbon-bearing version derived from a RawRecord. This
-  is the only thing an analyst edits, approves, and locks.
+One-to-one link from ActivityRecord back to RawRecord. That link is why provenance is
+structural, not a convention:
 
-Each ActivityRecord has a one-to-one link back to the RawRecord it came from. That link is
-the whole point. It means "which source produced this / was it edited" isn't a convention I
-have to remember to maintain, it falls out of the schema:
+* which source / when → `raw_record.batch` (source type, filename, uploader, timestamp)
+* was it edited → `edited_by`/`edited_at` + the AuditEvent log; RawRecord still holds the
+  original so you can diff
+* what normalization changed → `original_quantity`/`original_unit` vs `quantity`/`unit`
 
-* Which source? `raw_record.batch` has the source type, filename, who uploaded it, when.
-* Was it edited? `edited_by` / `edited_at` on the canonical row, plus the AuditEvent log. The
-  RawRecord still shows the original, so you can always diff.
-* What changed in normalization? `original_quantity` / `original_unit` hold the verbatim
-  values; `quantity` / `unit` hold the cleaned ones.
-
-If a line can't be parsed at all, I still write the RawRecord (with a `parse_error`) and
-just don't create an ActivityRecord. That's what "failed" means on the dashboard. A line
-that parses but looks wrong gets an ActivityRecord with `status=flagged`. So the three
-buckets the PM asked for (came in / suspicious / failed) aren't a feature I bolted on,
-they're three states of the same pipeline.
+A line that can't be parsed still gets a RawRecord with a `parse_error` and no ActivityRecord
+(that's "failed"). A line that parses but looks wrong becomes an ActivityRecord with
+`status=flagged`. So the dashboard's three buckets (came in / suspicious / failed) are just
+pipeline states, not a bolted-on feature.
 
 ## Tables
 
-| Model | What it's for |
-|-------|---------------|
-| `Organization` | The tenant. Everything carries `org_id`. |
-| `User` | Has an `org` and a role (analyst/admin). |
-| `Facility` | What SAP plant codes and utility meters resolve to. Holds the country. |
-| `EmissionFactor` | A `quantity -> kgCO2e` factor, matched by category/region/fuel/currency. |
-| `ImportBatch` | One upload. Holds the source type and the ok/flagged/failed counts. |
-| `RawRecord` | The untouched source line, as JSON. |
-| `ActivityRecord` | The normalized, reviewable row. The editable surface. |
-| `AuditEvent` | Append-only log of every change. |
+| Model | For |
+|-------|-----|
+| `Organization` | tenant; everything carries `org_id` |
+| `User` | has `org` + role (analyst/admin) |
+| `Facility` | what SAP plant codes / utility meters resolve to; holds country |
+| `EmissionFactor` | a `quantity → kgCO2e` factor, matched by category/region/fuel/currency |
+| `ImportBatch` | one upload; holds source type + ok/flagged/failed counts |
+| `RawRecord` | untouched source line, as JSON |
+| `ActivityRecord` | normalized reviewable row; the editable surface |
+| `AuditEvent` | append-only log of every change |
 
-## Going through the requirements one by one
+## Requirements, point by point
 
-### Multi-tenancy
-Every table has an `org` FK and every query goes through one place, `TenantScoped.get_queryset()`,
-which filters on `request.user.org`. One org can't see another's rows. There's a test for
-exactly this (`TenancyTests`): a second org asking for the first org's record gets a 404, not
-a leak.
+**Multi-tenancy.** `org` FK on every table; every query goes through `TenantScoped.get_queryset()`
+(filters by `request.user.org`). One org can't see another's rows — pinned by `TenancyTests`
+(cross-org request gets 404). Not schema-/db-per-tenant: too much ops weight for a prototype.
+The risk (a forgotten `.filter(org=...)`) is contained by routing everything through the mixin;
+at scale I'd add Postgres row-level security.
 
-I didn't do schema-per-tenant or a database per tenant on purpose. For the number of tenants
-a prototype has, that's a lot of operational pain (migrations across N schemas, routing) for
-no real benefit. The downside of a shared schema is that one forgotten `.filter(org=...)`
-leaks data, so I funnel every query through the mixin and pin it with a test. If this were
-real and big, I'd add Postgres row-level security underneath as a second guard. Said so in
-TRADEOFFS.
+**Scope 1/2/3.** Derived from category, not source, because one SAP file has both Scope 1
+(fuel) and Scope 3 (procurement). The category→scope map is one dict (`pipeline/base.py`,
+`SCOPE_BY_CATEGORY`) so parsers can't disagree. Scope is stored (not recomputed) so an analyst
+can override it, with the override audited. Categories: stationary/mobile combustion (S1),
+purchased_electricity (S2), purchased_goods + business_travel_air/hotel/ground (S3).
 
-### Scope 1 / 2 / 3
-Scope comes from the category, not the source, because one source crosses scopes: a single
-SAP export has fuel (Scope 1) and procurement spend (Scope 3) in the same file. The
-category-to-scope mapping lives in exactly one dict (`pipeline/base.py`, `SCOPE_BY_CATEGORY`)
-so no parser can quietly disagree with another. I store the scope on the row rather than
-recomputing it, because an analyst can override it and I want the override in the audit log.
+**Source of truth.** Covered by the raw/canonical split: source + time on the batch, original
+values on RawRecord and the `original_*` fields, human edits on `edited_by`/`edited_at` + the
+audit log.
 
-Categories: `stationary_combustion`, `mobile_combustion` (S1); `purchased_electricity` (S2);
-`purchased_goods`, `business_travel_air` / `_hotel` / `_ground` (S3).
+**Unit normalization.** Parser converts to a canonical unit and keeps both. Handles gallons→L,
+MWh→kWh, German comma decimals (`1.250,50`). Unknown unit is never guessed: flagged
+`MISSING_UNIT`, value left blank, no co2e. Natural gas stays in m³ with a kgCO2e/m³ factor —
+converting gas volume to litres is dimensionally wrong.
 
-### Source-of-truth tracking
-Covered by the raw/canonical split above. For any row: the source and ingest time are on the
-batch, the original values are on the RawRecord and the `original_*` fields, and human edits
-are on `edited_by`/`edited_at` plus AuditEvent rows with `action="edit"`.
+**Factors + co2e.** Always `co2e = quantity × factor_value`; the parsers make `quantity` the
+thing the factor multiplies (a flight's quantity is `distance × passengers`). Computed at
+ingest so it's visible, but provisional until lock. Matching (`pipeline/factors.py`) is
+deterministic: fuel type and currency match exactly, only region falls back to a global
+default.
 
-### Unit normalization
-The parser converts to a canonical unit and keeps both. `quantity`/`unit` are normalized
-(L, m³, kWh, km, p-km, room-night, or a currency amount for spend). `original_quantity`/
-`original_unit` keep what the file said. Conversions I handle: gallons to litres, MWh to kWh,
-German comma decimals like `1.250,50`, that kind of thing. If a unit is unknown I do not
-guess. The row gets `MISSING_UNIT`, the normalized value stays blank, and co2e isn't
-computed.
+**Audit + lock.** `AuditEvent` is append-only (never updated/deleted); edits, approvals,
+rejections, locks each write actor/field/old/new. Approved → locked is one-way; a locked row
+is immutable and edits return 409 (`services.py`, tested in `LockTests`). A controlled reopen
+would be its own audited action — left out (TRADEOFFS).
 
-One thing I was deliberate about: natural gas stays in m³ with a kgCO2e/m³ factor. Converting
-gas volume into "litres" and applying a per-litre factor is just dimensionally wrong, so I
-didn't.
+**Flags.** A list on each row; a flag makes a judgement call visible, never changes data.
+`MISSING_QTY`, `NEGATIVE_QTY`, `MISSING_UNIT`, `UNMAPPED_CODE`, `NO_FACTOR`, `OUTLIER`,
+`POSSIBLE_DUPLICATE`, `DISTANCE_ESTIMATED`. Any flag sets `flagged`. `POSSIBLE_DUPLICATE` =
+same facility + category + overlapping period in a different batch; flagged for a human, never
+auto-merged.
 
-### Emission factors and co2e
-co2e is always `quantity * factor_value`. Same formula for every category, because the
-parsers do the work of making `quantity` be the thing the factor multiplies (a flight's
-quantity is `distance * passengers` in p-km, for example). I compute co2e at ingest so the
-analyst has a number to sanity-check, but it stays provisional until the row is locked. Factor
-matching is in `pipeline/factors.py` and is deterministic: fuel type and currency have to
-match exactly, only region falls back to a global default.
-
-### Audit trail and locking
-`AuditEvent` is append-only. Nothing in the app ever updates or deletes one. Edits, approvals,
-rejections and locks each write a row with actor, field, old, new. An approved row can be
-locked, and locking is one-way: a locked row is immutable and edits get a 409. That's in
-`services.py` and tested in `LockTests`. Reopening a locked row in a real system would itself
-be a controlled, audited action, which I left out (see TRADEOFFS).
-
-## Flags
-`flags` is a list on each ActivityRecord. The rule I stuck to: a flag makes a judgement call
-visible to a person, it never changes the data. Current flags: `MISSING_QTY`, `NEGATIVE_QTY`,
-`MISSING_UNIT`, `UNMAPPED_CODE`, `NO_FACTOR`, `OUTLIER`, `POSSIBLE_DUPLICATE`,
-`DISTANCE_ESTIMATED`. Any flag sets the row to `flagged`. The duplicate check (same facility +
-category + overlapping period, in a different batch) is the one place I acknowledge the same
-activity showing up from two systems. I flag it and let a human decide; I don't auto-merge,
-because merging silently changes a reported number.
-
-## What I'd change if this were real
-* Postgres row-level security as a backstop on tenancy.
-* A proper versioned factor library (by year, methodology, geography) instead of the flat
-  seeded table. The `valid_from` field is already there for it.
-* Real outlier detection (rolling baselines per facility) instead of static ceilings.
-* A controlled reopen flow for locked rows.
+## If this were real
+Postgres row-level security on tenancy; a versioned factor library (the `valid_from` field is
+already there); statistical outlier baselines instead of static ceilings; a controlled reopen
+flow for locked rows.
