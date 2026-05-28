@@ -69,12 +69,6 @@ assumption into the source-of-truth layer.
 Gas is metered by volume in m³ and gets a kgCO2e/m³ factor. I don't convert it to litres,
 that's dimensionally meaningless. Liquid fuels stay in litres (gallons converted).
 
-## Deployment
-The React app is built locally into `backend/web_build` and committed; Django serves the SPA
-shell and WhiteNoise serves the hashed assets. Keeps the Render runtime Python-only (no Node
-build step) and the app single-origin (no CORS in prod). The cost is I have to rebuild and
-commit the frontend before deploying. Fine for a prototype.
-
 ## What I'd ask the PM
 1. Which SAP export, exactly? The right column mapping depends entirely on the client's
    specific report/transaction. I built for a movements-style export; I'd want one real file
