@@ -1,15 +1,3 @@
-"""
-Data model for Breathe ESG ingestion prototype.
-
-Design spine: TWO LAYERS.
-  RawRecord  = the exact bytes a source handed us, never mutated. The audit anchor.
-  ActivityRecord = the normalized, reviewable, carbon-bearing row, derived from a RawRecord.
-
-Every canonical row points back to the raw row it came from. That single link is what
-gives us "which source produced this, when, was it edited" structurally rather than by
-convention. Everything else (multi-tenancy, scope, audit) hangs off that.
-"""
-
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
