@@ -8,14 +8,20 @@ Django REST + React + Postgres.
 
 Start with [MODEL.md](MODEL.md) — it explains the one idea the rest hangs off. The reasoning
 is in [DECISIONS.md](DECISIONS.md), the things I left out in [TRADEOFFS.md](TRADEOFFS.md), and
-the per-source research in [SOURCES.md](SOURCES.md). There's also a deeper pipeline writeup in
-[PIPELINE.md](PIPELINE.md).
+the per-source research in [SOURCES.md](SOURCES.md).
 
 ## Demo login
-```
-analyst / analyst123      reviews, edits, approves, locks
-admin   / admin123          also gets Django /admin
-```
+
+Two seeded orgs, so you can see tenant isolation — log in as each and you only see that org's
+data. Same password per role.
+
+| Org | Analyst | Admin | Records |
+|-----|---------|-------|---------|
+| Acme Corp | `analyst` / `analyst123` | `admin` / `admin123` | 22 |
+| Globex Inc | `globex_analyst` / `analyst123` | `globex_admin` / `admin123` | 16 |
+
+Admins also reach Django `/admin`. Emission factors are global reference data (not org-scoped);
+everything else is scoped per org.
 
 ## How it fits together
 
