@@ -1,7 +1,6 @@
 # Decisions
 
-The ambiguities I hit, what I picked, and why. Where I'd have asked the PM instead of
-guessing, I've said so at the bottom.
+The ambiguities I hit, what I picked, and why.
 
 ## Architecture
 
