@@ -68,17 +68,3 @@ assumption into the source-of-truth layer.
 ## Natural gas in m³
 Gas is metered by volume in m³ and gets a kgCO2e/m³ factor. I don't convert it to litres,
 that's dimensionally meaningless. Liquid fuels stay in litres (gallons converted).
-
-## What I'd ask the PM
-1. Which SAP export, exactly? The right column mapping depends entirely on the client's
-   specific report/transaction. I built for a movements-style export; I'd want one real file
-   before hardening it.
-2. Spend-based or activity-based procurement? Changes the factor model and whether I need FX
-   rates and category-level factors.
-3. Market-based or location-based Scope 2? Decides whether I have to model RECs/PPAs.
-4. What's the policy for reopening a locked row? Auditors sometimes need post-sign-off
-   corrections, and the right flow depends on the client's audit process.
-5. Who reviews, and do they need maker/checker separation? That's what decides how much RBAC
-   is actually needed.
-6. When the same activity legitimately comes from two systems, flag only or an explicit
-   merge/supersede flow?
